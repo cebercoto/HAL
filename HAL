@@ -498,7 +498,9 @@ fi
 if [ ! -e .HAL.JOBS.txt ]; then
 	touch .HAL.JOBS.txt
 fi
-
+if [ ! -e .HAL.txt ]; then
+	touch .HAL.txt
+fi
 if [ ${HALUSER} = 'ALL' ]; then
 	if [ ${HALDATA} = 'ALL' ]; then
 		find ${DATAFOLDER} -mindepth ${DIRECTORYDEPTH} -maxdepth ${DIRECTORYDEPTH} -type d | grep -v -f ${DATAFOLDER}/.HAL.txt | grep -v -f ${DATAFOLDER}/.HAL.JOBS.txt >> ${DATAFOLDER}/.HAL.JOBS.txt
@@ -533,6 +535,7 @@ for i in `cat ${DATAFOLDER}/.HAL.JOBS.txt`; do
 			elif [ `ls /data/ngsdata/SampleSheets/${INSTRUMENT}/ | grep ${DATANAME} | wc -l` -eq 1 ]; then
 				cp /data/ngsdata/SampleSheets/${INSTRUMENT}/${DATANAME}*.csv ${i}/SampleSheet.csv
 				dos2unix ${i}/SampleSheet.csv
+				## Have to insert here a sample sheet checker :(
 				CURRENTUSER=`sed -n '/Data/,$p' ${i}/SampleSheet.csv | tail -n +2 | awk -F',' -v c="Sample_Project" 'NR==1{for (i=1; i<=NF; i++) if ($i==c){p=i; break}; next} {print $p}' | sort -u | sed -e "s/\s\+//g"`
 				if [ -z ${CURRENTUSER} ]; then
 					sleep 1
@@ -594,6 +597,7 @@ for i in `cat ${DATAFOLDER}/.HAL.JOBS.txt`; do
 			elif [ `ls /data/ngsdata/SampleSheets/${INSTRUMENT}/ | grep ${DATANAME} | wc -l` -eq 1 ]; then
 				cp /data/ngsdata/SampleSheets/${INSTRUMENT}/${DATANAME}*.csv ${i}/SampleSheet.csv
 				dos2unix ${i}/SampleSheet.csv
+				## Have to insert here a sample sheet checker :(
 				CURRENTUSER=`sed -n '/Data/,$p' ${i}/SampleSheet.csv | tail -n +2 | awk -F',' -v c="Sample_Project" 'NR==1{for (i=1; i<=NF; i++) if ($i==c){p=i; break}; next} {print $p}' | sort -u | sed -e "s/\s\+//g"`
 				if [ -z ${CURRENTUSER} ]; then
 					{
@@ -644,6 +648,7 @@ for i in `cat ${DATAFOLDER}/.HAL.JOBS.txt`; do
 		if [ -e ${i}/RTAComplete.txt ]; then
 			DATANAME=`echo ${i} | awk -v DATAFOLDER="${DATAFOLDER}" '{ gsub ( DATAFOLDER"/", "" ) }1'`
 			dos2unix ${i}/SampleSheet.csv
+				## Have to insert here a sample sheet checker :(
 			CURRENTUSER=`sed -n '/Data/,$p' ${i}/SampleSheet.csv | tail -n +2 | awk -F',' -v c="Sample_Project" 'NR==1{for (i=1; i<=NF; i++) if ($i==c){p=i; break}; next} {print $p}' | sort -u | sed -e "s/\s\+//g"`
 			if [ -z ${CURRENTUSER} ]; then
 				sleep 1
@@ -679,6 +684,7 @@ for i in `cat ${DATAFOLDER}/.HAL.JOBS.txt`; do
 		if [ -e ${i}/RTAComplete.txt ]; then
 			DATANAME=`echo ${i} | awk -v DATAFOLDER="${DATAFOLDER}" '{ gsub ( DATAFOLDER"/", "" ) }1'`
 			dos2unix ${i}/SampleSheet.csv
+				## Have to insert here a sample sheet checker :(
 			CURRENTUSER=`sed -n '/Data/,$p' ${i}/SampleSheet.csv | tail -n +2 | awk -F',' -v c="Sample_Project" 'NR==1{for (i=1; i<=NF; i++) if ($i==c){p=i; break}; next} {print $p}' | sort -u | sed -e "s/\s\+//g"`
 			if [ -z ${CURRENTUSER} ]; then
 				sleep 1
@@ -726,6 +732,7 @@ for i in `cat ${DATAFOLDER}/.HAL.JOBS.txt`; do
 			elif [ `ls /data/ngsdata/SampleSheets/${INSTRUMENT}/ | grep ${DATANAME} | wc -l` -eq 1 ]; then
 				cp /data/ngsdata/SampleSheets/${INSTRUMENT}/${DATANAME}*.csv ${i}/SampleSheet.csv
 				dos2unix ${i}/SampleSheet.csv
+				## Have to insert here a sample sheet checker :(
 				CURRENTUSER=`sed -n '/Data/,$p' ${i}/SampleSheet.csv | tail -n +2 | awk -F',' -v c="Sample_Project" 'NR==1{for (i=1; i<=NF; i++) if ($i==c){p=i; break}; next} {print $p}' | sort -u | sed -e "s/\s\+//g"`
 				if [ -z ${CURRENTUSER} ]; then
 					sleep 1
