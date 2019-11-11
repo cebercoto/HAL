@@ -1,0 +1,203 @@
+#!/bin/bash
+for k in `cat /data/ngsdata/Temp/Instruments.txt`; do
+	ls -d /data/ngsdata/${k}/*/ > /data/ngsdata/${k}/${k}ToCheck.txt
+	vim -c "%s/\/data\/ngsdata\/${k}\///ge|wq" /data/ngsdata/${k}/${k}ToCheck.txt >/dev/null 2>&1
+	vim -c "%s/\///ge|wq" /data/ngsdata/${k}/${k}ToCheck.txt >/dev/null 2>&1
+	for i in `cat /data/ngsdata/${k}/${k}ToCheck.txt`; do
+		if [ `less /data/ngsdata/${k}/${k}Registered.txt | grep ${i} | wc -l` = 0 ]; then
+			echo "${i}" >> /data/ngsdata/${k}/${k}Registered.txt
+			sed -n '/Data/,$p' /data/ngsdata/${k}/${i}/SampleSheet.csv | tail -n+2 | awk -F',' -v c="Sample_Project" 'NR==1{for (i=1; i<=NF; i++) if ($i==c){p=i; break}; next} {print $p}' | sort -u > /data/ngsdata/${k}/${i}/Users.txt
+			{
+				echo "Subject: New run ${i} on a ${k}"
+				echo "The run ${i} on a ${k} has been marked as Registered"
+				echo ""
+				echo "Users:"
+				cat /data/ngsdata/${k}/${i}/Users.txt
+				echo ""
+				date +[%D-%R]
+			} | /usr/sbin/ssmtp cebercoto@gmail.com,grc32@medschl.cam.ac.uk
+		fi
+	done
+	for i in `cat /data/ngsdata/${k}/${k}Registered.txt`; do
+		if [ -e /data/ngsdata/${k}/${i}/RTAComplete.txt ]; then
+			if [ `less /data/ngsdata/${k}/${k}Finished.txt | grep ${i} | wc -l` = 0 ]; then
+				echo "${i}" >> /data/ngsdata/${k}/${k}Finished.txt
+				{
+					echo "Subject: Run ${i} on a ${k} finished"
+					echo "The run ${i} on a ${k} has been marked as Finished"
+					echo ""
+					echo "Users:"
+					cat /data/ngsdata/${k}/${i}/Users.txt
+					echo ""
+					date +[%D-%R]
+				} | /usr/sbin/ssmtp cebercoto@gmail.com,grc32@medschl.cam.ac.uk
+			fi
+		fi
+	done
+	for i in `cat /data/ngsdata/${k}/${k}Finished.txt`; do
+		if [ `less /data/ngsdata/${k}/${k}Processed.txt | grep ${i} | wc -l` = 0 ]; then
+			echo "${i}" >> /data/ngsdata/${k}/${k}Processed.txt
+			cd /data/ngsdata/${k}/${i}/
+			## have to introduce here some condition for forking if several different demultiplexations are needed for different users, especially in the HiSeqs. It could be something like counting the number of SampleSheets present and run bcl2fastq once per SampleSheet. AND BE CAREFULL, usually each one of these demultiplexing also needs a separate RunInfo.xml file.
+			/usr/local/bin/bcl2fastq_2.19 -l WARNING
+			if [ -e /data/ngsdata/${k}/${i}/Data/Intensities/BaseCalls/tissuetyping ]; then
+				USER=tissuetyping
+				mkdir /data/ngsdata/${k}/Temp/${i}_${USER}
+				cp Data/Intensities/BaseCalls/${USER}/*.gz /data/ngsdata/${k}/Temp/${i}_${USER}/
+				rm -r Data/Intensities/BaseCalls/${USER}/*.gz
+				rm Data/Intensities/BaseCalls/*.gz
+				cd /data/ngsdata/${k}/Temp/
+				tar -zcvf ${i}_${USER}.tar.gz ${i}_${USER}
+				md5sum /data/ngsdata/${k}/Temp/${i}_${USER}.tar.gz > /data/ngsdata/${k}/Temp/${i}_${USER}.tar.gz.md5
+				rm -r /data/ngsdata/${k}/Temp/${i}_${USER}
+				ln -s /data/ngsdata/${k}/Temp/${i}_${USER}.tar.gz /var/www/html/${USER}/${i}_${USER}.tar.gz
+				ln -s /data/ngsdata/${k}/Temp/${i}_${USER}.tar.gz.md5 /var/www/html/${USER}/${i}_${USER}.tar.gz.md5
+				{
+					echo "Subject: ${k} run ${i}"
+					echo "Dear All,"
+					echo ""
+					echo "Please follow the link below to your newest ${k} run data."
+					echo ""
+					echo "http://sunstrider.medgen.medschl.cam.ac.uk/${USER}/${i}_${USER}.tar.gz"
+					echo "http://sunstrider.medgen.medschl.cam.ac.uk/${USER}/${i}_${USER}.tar.gz.md5"
+					echo ""
+					echo "Kind regards."
+				} | /usr/sbin/ssmtp cebercoto@gmail.com,tissue.typing@nhs.net,grc32@medschl.cam.ac.uk,vmm30@medschl.cam.ac.uk,frav2@medschl.cam.ac.uk
+				cd /data/ngsdata/${k}/
+				cp ${i}/SampleSheet.csv ${i}.csv
+				tar -zcvf ${i}_${USER}.tar.gz ${i}
+				md5sum ${i}_${USER}.tar.gz > ${i}_${USER}.tar.gz.md5
+				#rm -r ${i}
+			fi
+			if [ -e /data/ngsdata/${k}/${i}/Data/Intensities/BaseCalls/clinicalgenetics ]; then
+				USER=clinicalgenetics
+				mkdir /data/ngsdata/${k}/Temp/${i}_${USER}
+				cp Data/Intensities/BaseCalls/${USER}/*.gz /data/ngsdata/${k}/Temp/${i}_${USER}/
+				cp SampleSheet.csv /data/ngsdata/${k}/Temp/${i}_${USER}/
+				rm -r Data/Intensities/BaseCalls/${USER}/*.gz
+				rm Data/Intensities/BaseCalls/*.gz
+				cd /data/ngsdata/${k}/Temp/
+				tar -zcvf ${i}_${USER}.tar.gz ${i}_${USER}
+				md5sum /data/ngsdata/${k}/Temp/${i}_${USER}.tar.gz > /data/ngsdata/${k}/Temp/${i}_${USER}.tar.gz.md5
+				rm -r /data/ngsdata/${k}/Temp/${i}_${USER}
+				ln -s /data/ngsdata/${k}/Temp/${i}_${USER}.tar.gz /var/www/html/${USER}/${i}_${USER}.tar.gz
+				ln -s /data/ngsdata/${k}/Temp/${i}_${USER}.tar.gz.md5 /var/www/html/${USER}/${i}_${USER}.tar.gz.md5
+				{
+					echo "Subject: ${k} run ${i}"
+                                        echo "Dear All,"
+                                        echo ""
+                                        echo "Please follow the link below to your newest ${k} run data."
+                                        echo ""
+                                        echo "http://sunstrider.medgen.medschl.cam.ac.uk/${USER}/${i}_${USER}.tar.gz"
+                                        echo "http://sunstrider.medgen.medschl.cam.ac.uk/${USER}/${i}_${USER}.tar.gz.md5"
+                                        echo ""
+                                        echo "Kind regards."
+				} | /usr/sbin/ssmtp cebercoto@gmail.com,grc32@medschl.cam.ac.uk,vmm30@medschl.cam.ac.uk,frav2@medschl.cam.ac.uk,kbr@brugger.dk,kim.brugger@addenbrookes.nhs.uk,kim.brugger@gmail.com,howard.martin@addenbrookes.nhs.uk,matthew.garner@addenbrookes.nhs.uk
+				cd /data/ngsdata/${k}/
+				cp ${i}/SampleSheet.csv ${i}.csv
+				tar -zcvf ${i}_${USER}.tar.gz ${i}
+				md5sum ${i}_${USER}.tar.gz > ${i}_${USER}.tar.gz.md5
+				#rm -r ${i}
+			fi
+			if [ -e /data/ngsdata/${k}/${i}/Data/Intensities/BaseCalls/eguz ]; then
+				USER=eguz
+				mkdir /data/ngsdata/${k}/Temp/${i}_${USER}
+				cp Data/Intensities/BaseCalls/${USER}/*.gz /data/ngsdata/${k}/Temp/${i}_${USER}/
+				rm -r Data/Intensities/BaseCalls/${USER}/*.gz
+				rm Data/Intensities/BaseCalls/*.gz
+				cd /data/ngsdata/${k}/Temp/
+				tar -zcvf ${i}_${USER}.tar.gz ${i}_${USER}
+				md5sum /data/ngsdata/${k}/Temp/${i}_${USER}.tar.gz > /data/ngsdata/${k}/Temp/${i}_${USER}.tar.gz.md5
+				rm -r /data/ngsdata/${k}/Temp/${i}_${USER}
+				ln -s /data/ngsdata/${k}/Temp/${i}_${USER}.tar.gz /var/www/html/${USER}/${i}_${USER}.tar.gz
+				ln -s /data/ngsdata/${k}/Temp/${i}_${USER}.tar.gz.md5 /var/www/html/${USER}/${i}_${USER}.tar.gz.md5
+				{
+					echo "Subject: ${k} run ${i}"
+					echo "Dear Eguz,"
+					echo ""
+					echo "Please follow the link below to your newest ${k} run data."
+					echo ""
+					echo "http://sunstrider.medgen.medschl.cam.ac.uk/${USER}/${i}_${USER}.tar.gz"
+					echo "http://sunstrider.medgen.medschl.cam.ac.uk/${USER}/${i}_${USER}.tar.gz.md5"
+					echo ""
+					echo "Kind regards."
+				} | /usr/sbin/ssmtp cebercoto@gmail.com,grc32@medschl.cam.ac.uk,eo309@medschl.cam.ac.uk
+				cd /data/ngsdata/${k}/
+				cp ${i}/SampleSheet.csv ${i}.csv
+				tar -zcvf ${i}_${USER}.tar.gz ${i}
+				md5sum ${i}_${USER}.tar.gz > ${i}_${USER}.tar.gz.md5
+				#rm -r ${i}
+			fi
+			if [ -e /data/ngsdata/${k}/${i}/Data/Intensities/BaseCalls/drainbow ]; then
+				USER=drainbow
+				mkdir /data/ngsdata/${k}/Temp/${i}_${USER}
+				cp Data/Intensities/BaseCalls/${USER}/*.gz /data/ngsdata/${k}/Temp/${i}_${USER}/
+				rm -r Data/Intensities/BaseCalls/${USER}/*.gz
+				rm Data/Intensities/BaseCalls/*.gz
+				cd /data/ngsdata/${k}/Temp/
+				tar -zcvf ${i}_${USER}.tar.gz ${i}_${USER}
+				md5sum /data/ngsdata/${k}/Temp/${i}_${USER}.tar.gz > /data/ngsdata/${k}/Temp/${i}_${USER}.tar.gz.md5
+				rm -r /data/ngsdata/${k}/Temp/${i}_${USER}
+				ln -s /data/ngsdata/${k}/Temp/${i}_${USER}.tar.gz /var/www/html/${USER}/${i}_${USER}.tar.gz
+				ln -s /data/ngsdata/${k}/Temp/${i}_${USER}.tar.gz.md5 /var/www/html/${USER}/${i}_${USER}.tar.gz.md5
+				{
+					echo "Subject: ${k} run ${i}"
+					echo "Dear Dan,"
+					echo ""
+					echo "Please follow the link below to your newest ${k} run data."
+					echo ""
+					echo "http://sunstrider.medgen.medschl.cam.ac.uk/${USER}/${i}_${USER}.tar.gz"
+					echo "http://sunstrider.medgen.medschl.cam.ac.uk/${USER}/${i}_${USER}.tar.gz.md5"
+					echo ""
+					echo "Kind regards."
+				} | /usr/sbin/ssmtp cebercoto@gmail.com,grc32@medschl.cam.ac.uk,dan.rainbow@cimr.cam.ac.uk
+				cd /data/ngsdata/${k}/
+				cp ${i}/SampleSheet.csv ${i}.csv
+				tar -zcvf ${i}_${USER}.tar.gz ${i}
+				md5sum ${i}_${USER}.tar.gz > ${i}_${USER}.tar.gz.md5
+				#rm -r ${i}
+			fi
+			if [ -e /data/ngsdata/${k}/${i}/Data/Intensities/BaseCalls/cegx ]; then
+				USER=cegx
+				mkdir /data/ngsdata/${k}/Temp/${i}_${USER}
+				cp Data/Intensities/BaseCalls/${USER}/*.gz /data/ngsdata/${k}/Temp/${i}_${USER}/
+				rm -r Data/Intensities/BaseCalls/${USER}/*.gz
+				rm Data/Intensities/BaseCalls/*.gz
+				cd /data/ngsdata/${k}/Temp/
+				tar -zcvf ${i}_${USER}.tar.gz ${i}_${USER}
+				md5sum /data/ngsdata/${k}/Temp/${i}_${USER}.tar.gz > /data/ngsdata/${k}/Temp/${i}_${USER}.tar.gz.md5
+				rm -r /data/ngsdata/${k}/Temp/${i}_${USER}
+				ln -s /data/ngsdata/${k}/Temp/${i}_${USER}.tar.gz /var/www/html/${USER}/${i}_${USER}.tar.gz
+				ln -s /data/ngsdata/${k}/Temp/${i}_${USER}.tar.gz.md5 /var/www/html/${USER}/${i}_${USER}.tar.gz.md5
+				{
+					echo "Subject: ${k} run ${i}"
+					echo "Dear Albert"
+					echo ""
+					echo "Please follow the link below to your newest ${k} run data."
+					echo ""
+					echo "http://sunstrider.medgen.medschl.cam.ac.uk/${USER}/${i}_${USER}.tar.gz"
+					echo "http://sunstrider.medgen.medschl.cam.ac.uk/${USER}/${i}_${USER}.tar.gz.md5"
+					echo ""
+					echo "Kind regards."
+				} | /usr/sbin/ssmtp cebercoto@gmail.com,grc32@medschl.cam.ac.uk,albert.vilella@cegx.co.uk,michelle.johnson@cegx.co.uk,kate.howell@cegx.co.uk,nic.walker@cegx.co.uk,rita.san-bento@cegx.co.uk,vitali.proutski@cegx.co.uk
+				cd /data/ngsdata/${k}/
+				cp ${i}/SampleSheet.csv ${i}.csv
+				tar -zcvf ${i}_${USER}.tar.gz ${i}
+				md5sum ${i}_${USER}.tar.gz > ${i}_${USER}.tar.gz.md5
+			fi
+			## To keep adding rules for each customer/user data processing they would go in here within `if` loops
+			#cp /data/ngsdata/${k}/${i}/SampleSheet.csv /data/ngsdata/${k}/${i}.csv
+			#cd /data/ngsdata/${k}/
+			#tar -zcvf ${i}_${USER}.tar.gz ${i}
+			#md5sum /data/ngsdata/${k}/${i}_${USER}.tar.gz > /data/ngsdata/${k}/${i}_${USER}.tar.gz.md5
+			#rm -r /data/ngsdata/${k}/${i}
+			{
+				echo "Subject: ${k} run ${i} is archived"
+				echo "The run ${i} on a ${k} has been Processed, Sent and Archived"
+				echo ""
+				date +[%D-%R]
+			} | /usr/sbin/ssmtp cebercoto@gmail.com,grc32@medschl.cam.ac.uk
+		fi
+	done
+	rm /data/ngsdata/${k}/${k}ToCheck.txt
+done

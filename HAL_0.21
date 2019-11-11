@@ -1,0 +1,805 @@
+#!/bin/bash
+echo "########################################################"
+echo "#                      HAL v0.21                       #"
+echo "# Writen by Ezequiel Martin (jem220@medschl.cam.ac.uk) #"
+echo "#                                                      #"
+echo "#                   April 25th 2019                    #"
+echo "#                                                      #"
+echo "#                   HAL --help TRUE                    #"
+echo "#                                                      #"
+echo "########################################################"
+## The structure of the names to be sent in CMDL is date in YYMMDD format + "_" + user + what + ".tar.gz"
+## The structure of the names to be sent in SMCL is either the run folder name or as in CMDL
+# Variables definition
+CURRENTUSER=${USER}
+HELP=false
+DATAFOLDER=`pwd`
+HALUSER=ALL
+HALDATA=ALL
+FORCE=false
+NEWUSER=false
+NEWUSEREMAIL=NULL
+SERVERNAME=`hostname`
+FACILITY=`cat /data/Resources/Software/ceberSUITE/HAL/Facility.txt`
+ADMINEMAIL=`cat /data/Resources/Software/ceberSUITE/HAL/AdminEmail.txt`
+GROUPEMAIL=`cat /data/Resources/Software/ceberSUITE/HAL/GroupEmail.txt`
+UPDATEPASS=false
+JANITOR=false
+USERFRIENDLYNAME=NULL
+# Options Section
+while [[ $# > 1 ]]
+do
+key="$1"
+case $key in
+	-H|--help)
+    HELP=$2
+    shift
+    ;;
+	--data-folder)
+	DATAFOLDER=$2
+	shift
+	;;
+	--user)
+	HALUSER=$2
+	shift
+	;;
+	--data)
+	HALDATA=$2
+	shift
+	;;
+	--force)
+	FORCE=$2
+	shift
+	;;
+	--new-user)
+	NEWUSER=$2
+	shift
+	;;
+	--friendly-name)
+	USERFRIENDLYNAME=$2
+	shift
+	;;
+	--new-user-email)
+	NEWUSEREMAIL=$2
+	shift
+	;;
+	--update-password)
+	UPDATEPASS=$2
+	shift
+	;;
+	--janitor)
+	JANITOR=$2
+	shift
+	;;
+esac
+shift
+done
+
+## Help section
+if [ $HELP = "true" ]; then
+	echo "Available options are:"
+	echo ""
+	echo "-H/--help                        Display this help menuand exit"
+	echo "--data-folder                    "
+	echo "--user                           "
+	echo "--data                           "
+	echo "--force                          "
+	echo "--new-user                       "
+	echo "--new-user-email                 "
+	echo "--update-password                "
+	echo "--janitor                        "
+	exit
+fi
+
+## Summary of options section
+
+## New user mode
+if [ ${NEWUSER} != 'false' ]; then
+	if [ `grep -w ${NEWUSER} /var/www/.htpasswd | wc -l` -gt 0 ]; then
+		echo "user already exists"
+		exit
+	fi
+	if [ ${NEWUSEREMAIL} = 'NULL' ]; then
+		echo "you need to provide an email"
+		exit
+	fi
+	if [ ${USERFRIENDLYNAME} = 'NULL' ]; then
+		echo "you need to provide a user friendly name for the new user"
+		exit
+	fi
+	if [ `id -u` != 0 ]; then
+		echo "need to run with sudo"
+		exit
+	fi
+	if [ ${SERVERNAME} = 'sunstrider' ]; then
+		CURRENTUSER=ngsdata
+	fi
+	if [ ${SERVERNAME} = 'thor' ]; then
+		CURRENTUSER=cebercoto
+	fi
+	cd /var/www/
+	NEWPASSWORD=`< /dev/urandom tr -dc _A-Z-a-z-0-9 | head -c${1:-14};echo;`
+	htpasswd -mb .htpasswd ${NEWUSER} ${NEWPASSWORD}
+	cd html
+	mkdir ${NEWUSER}
+	cd ${NEWUSER}
+	cp /data/Resources/Software/ceberSUITE/HAL/htaccess .htaccess
+	sed -i -e "s/PIKACHU/${NEWUSER}/" .htaccess
+	cd ..
+	chown -R ${CURRENTUSER}:${CURRENTUSER} ${NEWUSER}
+	{
+		echo "Subject: New Account in ${SERVERNAME}/${FACILITY}"
+		echo "To: ${ADMINEMAIL},${NEWUSEREMAIL},${GROUPEMAIL}"
+		echo "Dear ${USERFRIENDLYNAME},"
+		echo ""
+		echo "A new account has been created for you in the ${SERVERNAME} server to access your ${FACILITY} data. Your user name is ${NEWUSER}, and your password will be in a separate email from this same address with the subject "${SERVERNAME}". Every time you have new data with ${FACILITY} you will be sent an automatic email with http links to your data that can only be accessed with your credentials."
+		echo ""
+		echo "If you need a password reset or any other thing, contact Dr. Ezequiel Martin (jem220@medschl.cam.ac.uk)"
+		echo ""
+		echo "Kind Regards."
+		echo ""
+		echo "${FACILITY}"
+	} | sendmail ${ADMINEMAIL},${NEWUSEREMAIL},${GROUPEMAIL}
+	{
+		echo "Subject: ${SERVERNAME}"
+		echo "To: ${NEWUSERMAIL}"
+		echo "${NEWPASSWORD}"
+	} | sendmail ${NEWUSEREMAIL}
+	echo -e "${NEWUSER}\t${NEWUSEREMAIL}\t${USERFRIENDLYNAME}" >> /var/www/accounts.txt
+	exit
+fi
+
+## Update Password mode
+if [ ${UPDATEPASS} != 'false' ]; then
+	if [ `grep -w ${NEWUSER} /var/www/.htpasswd | wc -l` -eq 1 ]; then
+		if [ `id -u` != 0 ]; then
+			echo "need to run with sudo"
+			exit
+		fi
+		if [ ${SERVERNAME} = 'sunstrider' ]; then
+			CURRENTUSER=ngsdata
+		fi
+		if [ ${SERVERNAME} = 'thor' ]; then
+			CURRENTUSER=cebercoto
+		fi
+		NEWPASSWORD=`< /dev/urandom tr -dc _A-Z-a-z-0-9 | head -c${1:-14};echo;`
+		htpasswd -mb .htpasswd ${NEWUSER} ${NEWPASSWORD}
+		USEREMAIL=`grep ${UPDATEPASS} /var/www/accounts.txt | awk '{ print $2 }'`
+		USERFRIENDLYNAME=`grep ${UPDATEPASS} /var/www/accounts.txt | awk '{ print $3 }'`
+		{
+			echo "Subject: Password reset in ${SERVERNAME}/${FACILITY}"
+			echo "To: ${ADMINEMAIL},${USEREMAIL}"
+			echo "Dear ${USERFRIENDLYNAME},"
+			echo ""
+			echo " A password reset has been requested for your userthe ${SERVERNAME} server to access your ${FACILITY} data. Your new password will be in a separate email from this same address with the subject "${SERVERNAME}". If you have not requested this password reset, please contact Dr. Ezequiel Martin (jem220@medschl.cam.ac.uk)"
+			echo ""
+			echo "Kind Regards."
+			echo ""
+			echo "${FACILITY}"
+		} | sendmail ${ADMINEMAIL},${NEWUSEREMAIL}
+		{
+			echo "Subject: ${SERVERNAME}"
+			echo "To: ${USEREMAIL}"
+			echo "${NEWPASSWORD}"
+		} | sendmail ${NEWUSEREMAIL}
+	else
+		echo "That user name is not registered."
+		exit
+	fi
+fi
+## Janitor mode
+if [ ${JANITOR} = 'true' ]; then
+	if [ ${FACILITY} = 'CMDL' ]; then
+		DIRECTORYDEPTH=2
+	elif [ ${FACILITY} = 'SMCL' ]; then
+		DIRECTORYDEPTH=1
+	else
+		echo "Facility ${FACILITY} nor recognised"
+		exit
+	fi
+	if [ `echo ${DATAFOLDER} | grep HiSeq2500 | wc -l` -eq 1 ]; then
+		INSTRUMENT=HiSeq2500
+		for i in `ls *.tar.gz`; do
+			RUNFULL=`echo ${i} | sed -e "s/\.tar\.gz//"`
+			RUN=`echo $RUNFULL | cut -c 1-29`
+			CURRENTUSER`echo $RUNFULL | sed -e "s/${RUN}_//"`
+			USEREMAIL=`grep ${UPDATEPASS} /var/www/accounts.txt | awk '{ print $2 }'`
+			USERFRIENDLYNAME=`grep ${UPDATEPASS} /var/www/accounts.txt | awk '{ print $3 }'`
+			DATE=`echo $RUNFULL | cut -c 1-6`
+			DATEEPOCH=`date -d ${DATE} +%s`
+			CURRENTDATE=`date +%s`
+			AGE=`echo -e "( ${CURRENTDATE} - ${DATEEPOCH} ) / ( 24 * 3600 )" | bc`
+			## 20 days warning for data deletion, move files around to duskwood and arhicve csv.
+			if [ ${AGE} -ge 90 ]; then
+				cp ${DATAFOLDER}/${i} /data2/duskwood/${INSTRUMENT}/
+				cp ${DATAFOLDER}/${i}.md5 /data2/duskwood/${INSTRUMENT}/
+				cp ${DATAFOLDER}/${RUNFULL}.csv /data2/duskwood/${INSTRUMENT}/
+				rm ${DATAFOLDER}/${i}
+				rm ${DATAFOLDER}/${i}.md5
+				mv ${DATAFOLDER}/${RUNFULL}.csv /data/ngsdata/SampleSheets/${INSTRUMENT}/
+				{
+					echo "Subject: SMCL data deletion warning"
+					echo "To: ${ADMINEMAIL},${USEREMAIL}"
+					echo "Dear ${USERFRIENDLYNAME},"
+					echo ""
+					echo "This is a warning for the permanent deletion of the run ${RUN} sequenced on a ${INSTRUMENT} at ${FACILITY} ${AGE} days ago. The raw data corresponding this run will be deleted 20 days from now."
+					echo ""
+					echo "DO NOT ANSWER TO THIS EMAIL. Please let us know at grc32@medschl.cam.ac.uk or jem220@medschl.cam.ac.uk if you need access to this data from us before deletion."
+					echo ""
+					echo "Kind Regards."
+					echo ""
+					echo "${FACILITY}"
+				} | sendmail ${ADMINEMAIL},${NEWUSEREMAIL}
+			fi
+			## All the things that happen when the run needs to be deleted/archived.
+		done
+		for i in `ls /data2/duskwood/${INSTRUMENT}/*.tar.gz`; do
+			RUNFULL=`echo ${i} | sed -e "s/\.tar\.gz//"`
+			RUN=`echo $RUNFULL | cut -c 1-29`
+			CURRENTUSER`echo $RUNFULL | sed -e "s/${RUN}_//"`
+			USEREMAIL=`grep ${UPDATEPASS} /var/www/accounts.txt | awk '{ print $2 }'`
+			USERFRIENDLYNAME=`grep ${UPDATEPASS} /var/www/accounts.txt | awk '{ print $3 }'`
+			DATE=`echo $RUNFULL | cut -c 1-6`
+			DATEEPOCH=`date -d ${DATE} +%s`
+			CURRENTDATE=`date +%s`
+			AGE=`echo -e "( ${CURRENTDATE} - ${DATEEPOCH} ) / ( 24 * 3600 )" | bc`
+			if [ ${AGE} -ge 110 ]; then
+				{
+					echo "Subject: TIME FOR DATA DELETION"
+					echo "To: ${ADMINEMAIL}"
+					echo "Time to delete the ${RUNFULL} run (${INSTRUMENT})"
+					echo ""
+					echo "${FACILITY}"
+				}
+			fi
+		done
+	elif [ `echo ${DATAFOLDER} | grep HiSeq4000 | wc -l` -eq 1 ]; then
+		INSTRUMENT=HiSeq4000
+		for i in `ls *.tar.gz`; do
+			RUNFULL=`echo ${i} | sed -e "s/\.tar\.gz//"`
+			RUN=`echo $RUNFULL | cut -c 1-29`
+			CURRENTUSER`echo $RUNFULL | sed -e "s/${RUN}_//"`
+			USEREMAIL=`grep ${UPDATEPASS} /var/www/accounts.txt | awk '{ print $2 }'`
+			USERFRIENDLYNAME=`grep ${UPDATEPASS} /var/www/accounts.txt | awk '{ print $3 }'`
+			DATE=`echo $RUNFULL | cut -c 1-6`
+			DATEEPOCH=`date -d ${DATE} +%s`
+			CURRENTDATE=`date +%s`
+			AGE=`echo -e "( ${CURRENTDATE} - ${DATEEPOCH} ) / ( 24 * 3600 )" | bc`
+			## 20 days warning for data deletion, move files around to duskwood and arhicve csv.
+			if [ ${AGE} -ge 90 ]; then
+				cp ${DATAFOLDER}/${i} /data2/duskwood/${INSTRUMENT}/
+				cp ${DATAFOLDER}/${i}.md5 /data2/duskwood/${INSTRUMENT}/
+				cp ${DATAFOLDER}/${RUNFULL}.csv /data2/duskwood/${INSTRUMENT}/
+				rm ${DATAFOLDER}/${i}
+				rm ${DATAFOLDER}/${i}.md5
+				mv ${DATAFOLDER}/${RUNFULL}.csv /data/ngsdata/SampleSheets/${INSTRUMENT}/
+				{
+					echo "Subject: SMCL data deletion warning"
+					echo "To: ${ADMINEMAIL},${USEREMAIL}"
+					echo "Dear ${USERFRIENDLYNAME},"
+					echo ""
+					echo "This is a warning for the permanent deletion of the run ${RUN} sequenced on a ${INSTRUMENT} at ${FACILITY} ${AGE} days ago. The raw data corresponding this run will be deleted 20 days from now."
+					echo ""
+					echo "DO NOT ANSWER TO THIS EMAIL. Please let us know at grc32@medschl.cam.ac.uk or jem220@medschl.cam.ac.uk if you need access to this data from us before deletion."
+					echo ""
+					echo "Kind Regards."
+					echo ""
+					echo "${FACILITY}"
+				} | sendmail ${ADMINEMAIL},${NEWUSEREMAIL}
+			fi
+			## All the things that happen when the run needs to be deleted/archived.
+		done
+		for i in `ls /data2/duskwood/${INSTRUMENT}/*.tar.gz`; do
+			RUNFULL=`echo ${i} | sed -e "s/\.tar\.gz//"`
+			RUN=`echo $RUNFULL | cut -c 1-29`
+			CURRENTUSER`echo $RUNFULL | sed -e "s/${RUN}_//"`
+			USEREMAIL=`grep ${UPDATEPASS} /var/www/accounts.txt | awk '{ print $2 }'`
+			USERFRIENDLYNAME=`grep ${UPDATEPASS} /var/www/accounts.txt | awk '{ print $3 }'`
+			DATE=`echo $RUNFULL | cut -c 1-6`
+			DATEEPOCH=`date -d ${DATE} +%s`
+			CURRENTDATE=`date +%s`
+			AGE=`echo -e "( ${CURRENTDATE} - ${DATEEPOCH} ) / ( 24 * 3600 )" | bc`
+			if [ ${AGE} -ge 110 ]; then
+				{
+					echo "Subject: TIME FOR DATA DELETION"
+					echo "To: ${ADMINEMAIL}"
+					echo "Time to delete the ${RUNFULL} run (${INSTRUMENT})"
+					echo ""
+					echo "${FACILITY}"
+				}
+			fi
+		done
+	elif [ `echo ${DATAFOLDER} | grep MiSeq | grep -v MiSeqDx | wc -l` -eq 1 ]; then
+		INSTRUMENT=MiSeq
+		for i in `ls *.tar.gz`; do
+			RUNFULL=`echo ${i} | sed -e "s/\.tar\.gz//"`
+			RUN=`echo $RUNFULL | cut -c 1-34`
+			CURRENTUSER`echo $RUNFULL | sed -e "s/${RUN}_//"`
+			USEREMAIL=`grep ${UPDATEPASS} /var/www/accounts.txt | awk '{ print $2 }'`
+			USERFRIENDLYNAME=`grep ${UPDATEPASS} /var/www/accounts.txt | awk '{ print $3 }'`
+			DATE=`echo $RUNFULL | cut -c 1-6`
+			DATEEPOCH=`date -d ${DATE} +%s`
+			CURRENTDATE=`date +%s`
+			AGE=`echo -e "( ${CURRENTDATE} - ${DATEEPOCH} ) / ( 24 * 3600 )" | bc`
+			## 20 days warning for data deletion, move files around to duskwood and arhicve csv.
+			if [ ${AGE} -ge 90 ]; then
+				cp ${DATAFOLDER}/${i} /data2/duskwood/${INSTRUMENT}/
+				cp ${DATAFOLDER}/${i}.md5 /data2/duskwood/${INSTRUMENT}/
+				cp ${DATAFOLDER}/${RUNFULL}.csv /data2/duskwood/${INSTRUMENT}/
+				rm ${DATAFOLDER}/${i}
+				rm ${DATAFOLDER}/${i}.md5
+				mv ${DATAFOLDER}/${RUNFULL}.csv /data/ngsdata/SampleSheets/${INSTRUMENT}/
+				{
+					echo "Subject: SMCL data deletion warning"
+					echo "To: ${ADMINEMAIL},${USEREMAIL}"
+					echo "Dear ${USERFRIENDLYNAME},"
+					echo ""
+					echo "This is a warning for the permanent deletion of the run ${RUN} sequenced on a ${INSTRUMENT} at ${FACILITY} ${AGE} days ago. The raw data corresponding this run will be deleted 20 days from now."
+					echo ""
+					echo "DO NOT ANSWER TO THIS EMAIL. Please let us know at grc32@medschl.cam.ac.uk or jem220@medschl.cam.ac.uk if you need access to this data from us before deletion."
+					echo ""
+					echo "Kind Regards."
+					echo ""
+					echo "${FACILITY}"
+				} | sendmail ${ADMINEMAIL},${NEWUSEREMAIL}
+			fi
+			## All the things that happen when the run needs to be deleted/archived.
+		done
+		for i in `ls /data2/duskwood/${INSTRUMENT}/*.tar.gz`; do
+			RUNFULL=`echo ${i} | sed -e "s/\.tar\.gz//"`
+			RUN=`echo $RUNFULL | cut -c 1-34`
+			CURRENTUSER`echo $RUNFULL | sed -e "s/${RUN}_//"`
+			USEREMAIL=`grep ${UPDATEPASS} /var/www/accounts.txt | awk '{ print $2 }'`
+			USERFRIENDLYNAME=`grep ${UPDATEPASS} /var/www/accounts.txt | awk '{ print $3 }'`
+			DATE=`echo $RUNFULL | cut -c 1-6`
+			DATEEPOCH=`date -d ${DATE} +%s`
+			CURRENTDATE=`date +%s`
+			AGE=`echo -e "( ${CURRENTDATE} - ${DATEEPOCH} ) / ( 24 * 3600 )" | bc`
+			if [ ${AGE} -ge 110 ]; then
+				{
+					echo "Subject: TIME FOR DATA DELETION"
+					echo "To: ${ADMINEMAIL}"
+					echo "Time to delete the ${RUNFULL} run (${INSTRUMENT})"
+					echo ""
+					echo "${FACILITY}"
+				}
+			fi
+		done
+	elif [ `echo ${DATAFOLDER} | grep MiSeqDx | wc -l` -eq 1 ]; then
+		INSTRUMENT=MiSeqDx
+		for i in `ls *.tar.gz`; do
+			RUNFULL=`echo ${i} | sed -e "s/\.tar\.gz//"`
+			RUN=`echo $RUNFULL | cut -c 1-34`
+			CURRENTUSER`echo $RUNFULL | sed -e "s/${RUN}_//"`
+			USEREMAIL=`grep ${UPDATEPASS} /var/www/accounts.txt | awk '{ print $2 }'`
+			USERFRIENDLYNAME=`grep ${UPDATEPASS} /var/www/accounts.txt | awk '{ print $3 }'`
+			DATE=`echo $RUNFULL | cut -c 1-6`
+			DATEEPOCH=`date -d ${DATE} +%s`
+			CURRENTDATE=`date +%s`
+			AGE=`echo -e "( ${CURRENTDATE} - ${DATEEPOCH} ) / ( 24 * 3600 )" | bc`
+			## 20 days warning for data deletion, move files around to duskwood and arhicve csv.
+			if [ ${AGE} -ge 90 ]; then
+				cp ${DATAFOLDER}/${i} /data2/duskwood/${INSTRUMENT}/
+				cp ${DATAFOLDER}/${i}.md5 /data2/duskwood/${INSTRUMENT}/
+				cp ${DATAFOLDER}/${RUNFULL}.csv /data2/duskwood/${INSTRUMENT}/
+				rm ${DATAFOLDER}/${i}
+				rm ${DATAFOLDER}/${i}.md5
+				mv ${DATAFOLDER}/${RUNFULL}.csv /data/ngsdata/SampleSheets/${INSTRUMENT}/
+				{
+					echo "Subject: SMCL data deletion warning"
+					echo "To: ${ADMINEMAIL},${USEREMAIL}"
+					echo "Dear ${USERFRIENDLYNAME},"
+					echo ""
+					echo "This is a warning for the permanent deletion of the run ${RUN} sequenced on a ${INSTRUMENT} at ${FACILITY} ${AGE} days ago. The raw data corresponding this run will be deleted 20 days from now."
+					echo ""
+					echo "DO NOT ANSWER TO THIS EMAIL. Please let us know at grc32@medschl.cam.ac.uk or jem220@medschl.cam.ac.uk if you need access to this data from us before deletion."
+					echo ""
+					echo "Kind Regards."
+					echo ""
+					echo "${FACILITY}"
+				} | sendmail ${ADMINEMAIL},${NEWUSEREMAIL}
+			fi
+			## All the things that happen when the run needs to be deleted/archived.
+		done
+		for i in `ls /data2/duskwood/${INSTRUMENT}/*.tar.gz`; do
+			RUNFULL=`echo ${i} | sed -e "s/\.tar\.gz//"`
+			RUN=`echo $RUNFULL | cut -c 1-34`
+			CURRENTUSER`echo $RUNFULL | sed -e "s/${RUN}_//"`
+			USEREMAIL=`grep ${UPDATEPASS} /var/www/accounts.txt | awk '{ print $2 }'`
+			USERFRIENDLYNAME=`grep ${UPDATEPASS} /var/www/accounts.txt | awk '{ print $3 }'`
+			DATE=`echo $RUNFULL | cut -c 1-6`
+			DATEEPOCH=`date -d ${DATE} +%s`
+			CURRENTDATE=`date +%s`
+			AGE=`echo -e "( ${CURRENTDATE} - ${DATEEPOCH} ) / ( 24 * 3600 )" | bc`
+			if [ ${AGE} -ge 110 ]; then
+				{
+					echo "Subject: TIME FOR DATA DELETION"
+					echo "To: ${ADMINEMAIL}"
+					echo "Time to delete the ${RUNFULL} run (${INSTRUMENT})"
+					echo ""
+					echo "${FACILITY}"
+				}
+			fi
+		done
+	elif [ `echo ${DATAFOLDER} | grep NextSeq | wc -l` -eq 1 ]; then
+		INSTRUMENT=NextSeq
+		for i in `ls *.tar.gz`; do
+			RUNFULL=`echo ${i} | sed -e "s/\.tar\.gz//"`
+			RUN=`echo $RUNFULL | cut -c 1-31`
+			CURRENTUSER`echo $RUNFULL | sed -e "s/${RUN}_//"`
+			USEREMAIL=`grep ${UPDATEPASS} /var/www/accounts.txt | awk '{ print $2 }'`
+			USERFRIENDLYNAME=`grep ${UPDATEPASS} /var/www/accounts.txt | awk '{ print $3 }'`
+			DATE=`echo $RUNFULL | cut -c 1-6`
+			DATEEPOCH=`date -d ${DATE} +%s`
+			CURRENTDATE=`date +%s`
+			AGE=`echo -e "( ${CURRENTDATE} - ${DATEEPOCH} ) / ( 24 * 3600 )" | bc`
+			## 20 days warning for data deletion, move files around to duskwood and arhicve csv.
+			if [ ${AGE} -ge 90 ]; then
+				cp ${DATAFOLDER}/${i} /data2/duskwood/${INSTRUMENT}/
+				cp ${DATAFOLDER}/${i}.md5 /data2/duskwood/${INSTRUMENT}/
+				cp ${DATAFOLDER}/${RUNFULL}.csv /data2/duskwood/${INSTRUMENT}/
+				rm ${DATAFOLDER}/${i}
+				rm ${DATAFOLDER}/${i}.md5
+				mv ${DATAFOLDER}/${RUNFULL}.csv /data/ngsdata/SampleSheets/${INSTRUMENT}/
+				{
+					echo "Subject: SMCL data deletion warning"
+					echo "To: ${ADMINEMAIL},${USEREMAIL}"
+					echo "Dear ${USERFRIENDLYNAME},"
+					echo ""
+					echo "This is a warning for the permanent deletion of the run ${RUN} sequenced on a ${INSTRUMENT} at ${FACILITY} ${AGE} days ago. The raw data corresponding this run will be deleted 20 days from now."
+					echo ""
+					echo "DO NOT ANSWER TO THIS EMAIL. Please let us know at grc32@medschl.cam.ac.uk or jem220@medschl.cam.ac.uk if you need access to this data from us before deletion."
+					echo ""
+					echo "Kind Regards."
+					echo ""
+					echo "${FACILITY}"
+				} | sendmail ${ADMINEMAIL},${NEWUSEREMAIL}
+			fi
+			## All the things that happen when the run needs to be deleted/archived.
+		done
+		for i in `ls /data2/duskwood/${INSTRUMENT}/*.tar.gz`; do
+			RUNFULL=`echo ${i} | sed -e "s/\.tar\.gz//"`
+			RUN=`echo $RUNFULL | cut -c 1-31`
+			CURRENTUSER`echo $RUNFULL | sed -e "s/${RUN}_//"`
+			USEREMAIL=`grep ${UPDATEPASS} /var/www/accounts.txt | awk '{ print $2 }'`
+			USERFRIENDLYNAME=`grep ${UPDATEPASS} /var/www/accounts.txt | awk '{ print $3 }'`
+			DATE=`echo $RUNFULL | cut -c 1-6`
+			DATEEPOCH=`date -d ${DATE} +%s`
+			CURRENTDATE=`date +%s`
+			AGE=`echo -e "( ${CURRENTDATE} - ${DATEEPOCH} ) / ( 24 * 3600 )" | bc`
+			if [ ${AGE} -ge 110 ]; then
+				{
+					echo "Subject: TIME FOR DATA DELETION"
+					echo "To: ${ADMINEMAIL}"
+					echo "Time to delete the ${RUNFULL} run (${INSTRUMENT})"
+					echo ""
+					echo "${FACILITY}"
+				}
+			fi
+		done
+	else
+		echo "Instrument not recognised"
+		exit
+	fi
+	
+fi
+
+## NGS data processing mode get jobs to do
+
+## have to define folder depth to look at depending on facility name, it would be 2 for CMDL (as below right now) and 1 for SMCL
+if [ ${FACILITY} = 'CMDL' ]; then
+	DIRECTORYDEPTH=2
+elif [ ${FACILITY} = 'SMCL' ]; then
+	DIRECTORYDEPTH=1
+else
+	echo "Facility ${FACILITY} nor recognised"
+	exit
+fi
+if [ ! -e .HAL.JOBS.txt ]; then
+	touch .HAL.JOBS.txt
+fi
+if [ ! -e .HAL.txt ]; then
+	touch .HAL.txt
+fi
+if [ ${HALUSER} = 'ALL' ]; then
+	if [ ${HALDATA} = 'ALL' ]; then
+		find ${DATAFOLDER} -mindepth ${DIRECTORYDEPTH} -maxdepth ${DIRECTORYDEPTH} -type d | grep -v -f ${DATAFOLDER}/.HAL.txt | grep -v -f ${DATAFOLDER}/.HAL.JOBS.txt >> ${DATAFOLDER}/.HAL.JOBS.txt
+	else
+		find ${DATAFOLDER} -mindepth ${DIRECTORYDEPTH} -maxdepth ${DIRECTORYDEPTH} -type d | grep -v -f ${DATAFOLDER}/.HAL.txt | grep -v -f ${DATAFOLDER}/.HAL.JOBS.txt | grep ${HALDATA} >> ${DATAFOLDER}/.HAL.JOBS.txt
+	fi
+else
+	if [ ${HALDATA} == 'ALL' ]; then
+		find ${DATAFOLDER} -mindepth ${DIRECTORYDEPTH} -maxdepth ${DIRECTORYDEPTH} -type d | grep -v -f ${DATAFOLDER}/.HAL.txt | grep -v -f ${DATAFOLDER}/.HAL.JOBS.txt | grep ${HALUSER} >> ${DATAFOLDER}/.HAL.JOBS.txt
+	else
+		find ${DATAFOLDER} -mindepth ${DIRECTORYDEPTH} -maxdepth ${DIRECTORYDEPTH} -type d | grep -v -f ${DATAFOLDER}/.HAL.txt | grep -v -f ${DATAFOLDER}/.HAL.JOBS.txt | grep ${HALUSER} | grep ${HALDATA} >> ${DATAFOLDER}/.HAL.JOBS.txt
+	fi
+fi
+
+## do the jobs
+for i in `cat ${DATAFOLDER}/.HAL.JOBS.txt`; do
+############################################################################# HiSeq 2500 #####################################################################################
+	if [ `echo ${DATAFOLDER} | grep HiSeq2500 | wc -l` -eq 1 ]; then
+	INSTRUMENT=HiSeq2500
+		if [ -e ${i}/RTAComplete.txt ]; then
+			DATANAME=`echo ${i} | awk -v DATAFOLDER="${DATAFOLDER}" '{ gsub ( DATAFOLDER"/", "" ) }1'`
+			if [ `ls /data/ngsdata/SampleSheets/${INSTRUMENT}/ | grep ${DATANAME} | wc -l` -gt 1 ]; then
+				{
+					echo "Subject: Run ${DATANAME}"
+					echo "To: jem220@medschl.cam.ac.uk,SMCL_NGS_General@medschl.cam.ac.uk"
+					echo "${INSTRUMENT} run ${DATANAME} has more than one sample sheet, which is not suported automatically for ${INSTRUMENT}"
+				} | sendmail jem220@medschl.cam.ac.uk
+			elif [ `ls /data/ngsdata/SampleSheets/${INSTRUMENT}/ | grep ${DATANAME} | wc -l` -eq 0 ]; then
+				sleep 1
+				# no sample sheet
+				# email
+			elif [ `ls /data/ngsdata/SampleSheets/${INSTRUMENT}/ | grep ${DATANAME} | wc -l` -eq 1 ]; then
+				cp /data/ngsdata/SampleSheets/${INSTRUMENT}/${DATANAME}*.csv ${i}/SampleSheet.csv
+				dos2unix ${i}/SampleSheet.csv
+				## Have to insert here a sample sheet checker :(
+				CURRENTUSER=`sed -n '/Data/,$p' ${i}/SampleSheet.csv | tail -n +2 | awk -F',' -v c="Sample_Project" 'NR==1{for (i=1; i<=NF; i++) if ($i==c){p=i; break}; next} {print $p}' | sort -u | sed -e "s/\s\+//g"`
+				if [ -z ${CURRENTUSER} ]; then
+					sleep 1
+					# empty user
+					# email
+				elif [ `grep -w ${CURRENTUSER} /var/www/.htpasswd | wc -l` != 1 ]; then
+					sleep 1
+					# user does not exist
+					# email
+				elif [ `grep -w ${CURRENTUSER} /var/www/.htpasswd | wc -l` -eq 1 ]; then
+					if [ -e /data/Resources/Software/ceberSUITE/HAL/modules/${CURRENTUSER}_${INSTRUMENT}.sh ]; then
+						/data/Resources/Software/ceberSUITE/HAL/modules/${CURRENTUSER}_${INSTRUMENT}.sh ${i} ${CURRENTUSER} ${DATANAME} ${INSTRUMENT} ${ADMINEMAIL} ${GROUPEMAIL} ${SERVERNAME}
+					else
+						/data/Resources/Software/ceberSUITE/HAL/modules/default_${INSTRUMENT}.sh ${i} ${CURRENTUSER} ${DATANAME} ${INSTRUMENT} ${ADMINEMAIL} ${GROUPEMAIL} ${SERVERNAME}
+					fi
+					echo ${i} >> ${DATAFOLDER}/.HAL.txt
+					DELETESTRING=`echo ${i} | awk '{ gsub ( "/", "\\\/", $1) }1'`
+					sed -i -e "/${DELETESTRING}/d" .HAL.JOBS.txt
+				fi
+			fi
+		else
+			sleep 1
+			#CURRENTCYCLE=`ls -d ${i}/Data/Intensities/BaseCalls/L001/C* | sed -e "s/C//" | sed -e "s/\.1//" | sort -g | tail -n1`
+			#TOTALCYCLES=`grep "Read Number" ${i}/RunInfo.xml | sed -e "s/.\+NumCycles=\"\([0-9]\+\)\"\s.\+/\1/" | awk '{sum+=$1;} END{print sum;}'`
+			# {
+			#	echo "Subject: Ongoing run ${DATANAME}"
+			#	echo "To: ${ADMINEMAIL}"
+			#	echo "${INSTRUMENT} run ${DATANAME} is currently in cycle ${CURRENTCYCLE} of ${TOTALCYCLES}"
+			#} | sendmail ${ADMINEMAIL}
+		fi
+############################################################################# HiSeq 4000 #####################################################################################
+################ This section is not finished, if the wet lab people put only 1 sample sheet by the time the run has ended, HAL will go off believeing it's and "easy" run. Have to include calculations to check all 8 lanes are accounted for in all present sample sheets #############################
+	elif [ `echo ${DATAFOLDER} | grep HiSeq4000 | wc -l` -eq 1 ]; then
+		INSTRUMENT=HiSeq4000
+		if [ -e ${i}/RTAComplete.txt ]; then
+			SIZE1=`du -s ${i} | awk '{ print $1 }'`
+			sleep 10
+			SIZE2=`du -s ${i} | awk '{ print $1 }'`
+			while [ ${SIZE1} != ${SIZE2} ]; do
+				SIZE1=`du -s ${i} | awk '{ print $1 }'`
+				sleep 10
+				SIZE2=`du -s ${i} | awk '{ print $1 }'`
+			done
+			DATANAME=`echo ${i} | awk -v DATAFOLDER="${DATAFOLDER}" '{ gsub ( DATAFOLDER"/", "" ) }1'`
+			if [ `ls /data/ngsdata/SampleSheets/${INSTRUMENT}/ | grep ${DATANAME} | wc -l` -gt 1 ]; then
+				{
+					echo "Subject: Run ${DATANAME}"
+					echo "To: ${ADMINEMAIL}"
+					echo "${INSTRUMENT} run ${DATANAME} has more than one sample sheet, which is not suported automatically for ${INSTRUMENT}"
+				} | sendmail ${ADMINEMAIL}
+				exit
+			elif [ `ls /data/ngsdata/SampleSheets/${INSTRUMENT}/ | grep ${DATANAME} | wc -l` -eq 0 ]; then
+				{
+					echo "Subject: Run ${DATANAME}"
+					echo "To: ${ADMINEMAIL}"
+					echo "${INSTRUMENT} run ${DATANAME} has no sample sheet, which is not suported automatically for ${INSTRUMENT}"
+				} | sendmail ${ADMINEMAIL}
+				exit
+			elif [ `ls /data/ngsdata/SampleSheets/${INSTRUMENT}/ | grep ${DATANAME} | wc -l` -eq 1 ]; then
+				cp /data/ngsdata/SampleSheets/${INSTRUMENT}/${DATANAME}*.csv ${i}/SampleSheet.csv
+				dos2unix ${i}/SampleSheet.csv
+				## Have to insert here a sample sheet checker :(
+				CURRENTUSER=`sed -n '/Data/,$p' ${i}/SampleSheet.csv | tail -n +2 | awk -F',' -v c="Sample_Project" 'NR==1{for (i=1; i<=NF; i++) if ($i==c){p=i; break}; next} {print $p}' | sort -u | sed -e "s/\s\+//g"`
+				if [ -z ${CURRENTUSER} ]; then
+					{
+						echo "Subject: Run ${DATANAME}"
+						echo "To: ${ADMINEMAIL}"
+						echo "${INSTRUMENT} run ${DATANAME} has no user in the Sample Sheet, which is not suported automatically for ${INSTRUMENT}"
+					} | sendmail ${ADMINEMAIL}
+					exit
+				elif [ `grep -w ${CURRENTUSER} /var/www/.htpasswd | wc -l` != 1 ]; then
+					{
+						echo "Subject: Run ${DATANAME}"
+						echo "To: ${ADMINEMAIL}"
+						echo "${INSTRUMENT} run ${DATANAME} has more than one user in the Sample Sheet, which is not suported automatically for ${INSTRUMENT}"
+					} | sendmail ${ADMINEMAIL}
+					exit
+				elif [ `grep -w ${CURRENTUSER} /var/www/.htpasswd | wc -l` -eq 0 ]; then
+					{
+						echo "Subject: Run ${DATANAME}"
+						echo "To: ${ADMINEMAIL}"
+						echo "${INSTRUMENT} run ${DATANAME} user does not exist, which is not suported automatically for ${INSTRUMENT}"
+					} | sendmail ${ADMINEMAIL}
+					exit
+				elif [ `grep -w ${CURRENTUSER} /var/www/.htpasswd | wc -l` -eq 1 ]; then
+					if [ -e /data/Resources/Software/ceberSUITE/HAL/modules/${CURRENTUSER}_${INSTRUMENT}.sh ]; then
+						/data/Resources/Software/ceberSUITE/HAL/modules/${CURRENTUSER}_${INSTRUMENT}.sh ${i} ${CURRENTUSER} ${DATANAME} ${INSTRUMENT} ${ADMINEMAIL} ${GROUPEMAIL} ${SERVERNAME}
+					else
+						/data/Resources/Software/ceberSUITE/HAL/modules/default_${INSTRUMENT}.sh ${i} ${CURRENTUSER} ${DATANAME} ${INSTRUMENT} ${ADMINEMAIL} ${GROUPEMAIL} ${SERVERNAME}
+					fi
+					echo ${i} >> ${DATAFOLDER}/.HAL.txt
+					DELETESTRING=`echo ${i} | awk '{ gsub ( "/", "\\\/", $1) }1'`
+					sed -i -e "/${DELETESTRING}/d" .HAL.JOBS.txt
+				fi
+			fi
+		else
+			sleep 1
+			#CURRENTCYCLE=`ls -d ${i}/Data/Intensities/BaseCalls/L001/C* | sed -e "s/C//" | sed -e "s/\.1//" | sort -g | tail -n1`
+			#TOTALCYCLES=`grep "Read Number" ${i}/RunInfo.xml | sed -e "s/.\+NumCycles=\"\([0-9]\+\)\"\s.\+/\1/" | awk '{sum+=$1;} END{print sum;}'`
+			# {
+			#	echo "Subject: Ongoing run ${DATANAME}"
+			#	echo "To: ${ADMINEMAIL}"
+			#	echo "${INSTRUMENT} run ${DATANAME} is currently in cycle ${CURRENTCYCLE} of ${TOTALCYCLES}"
+			#} | sendmail ${ADMINEMAIL}	
+		fi
+		sleep 1
+############################################################################# MiSeq #####################################################################################
+	elif [ `echo ${DATAFOLDER} | grep MiSeq | grep -v MiSeqDx | wc -l` -eq 1 ]; then
+		INSTRUMENT=MiSeq
+		if [ -e ${i}/RTAComplete.txt ]; then
+			DATANAME=`echo ${i} | awk -v DATAFOLDER="${DATAFOLDER}" '{ gsub ( DATAFOLDER"/", "" ) }1'`
+			dos2unix ${i}/SampleSheet.csv
+				## Have to insert here a sample sheet checker :(
+			CURRENTUSER=`sed -n '/Data/,$p' ${i}/SampleSheet.csv | tail -n +2 | awk -F',' -v c="Sample_Project" 'NR==1{for (i=1; i<=NF; i++) if ($i==c){p=i; break}; next} {print $p}' | sort -u | sed -e "s/\s\+//g"`
+			if [ -z ${CURRENTUSER} ]; then
+				sleep 1
+				# empty user
+				# email
+			elif [ `grep -w ${CURRENTUSER} /var/www/.htpasswd | wc -l` != 1 ]; then
+				sleep 1
+				# user does not exist
+				# email
+			elif [ `grep -w ${CURRENTUSER} /var/www/.htpasswd | wc -l` -eq 1 ]; then
+				if [ -e /data/Resources/Software/ceberSUITE/HAL/modules/${CURRENTUSER}_${INSTRUMENT}.sh ]; then
+					/data/Resources/Software/ceberSUITE/HAL/modules/${CURRENTUSER}_${INSTRUMENT}.sh ${i} ${CURRENTUSER} ${DATANAME} ${INSTRUMENT} ${ADMINEMAIL} ${GROUPEMAIL} ${SERVERNAME}
+				else
+					/data/Resources/Software/ceberSUITE/HAL/modules/default_${INSTRUMENT}.sh ${i} ${CURRENTUSER} ${DATANAME} ${INSTRUMENT} ${ADMINEMAIL} ${GROUPEMAIL} ${SERVERNAME}
+				fi
+				echo ${i} >> ${DATAFOLDER}/.HAL.txt
+				DELETESTRING=`echo ${i} | awk '{ gsub ( "/", "\\\/", $1) }1'`
+				sed -i -e "/${DELETESTRING}/d" .HAL.JOBS.txt
+			fi
+		else
+			sleep 1
+			#CURRENTCYCLE=`ls -d ${i}/Data/Intensities/BaseCalls/L001/C* | sed -e "s/C//" | sed -e "s/\.1//" | sort -g | tail -n1`
+			#TOTALCYCLES=`grep "Read Number" ${i}/RunInfo.xml | sed -e "s/.\+NumCycles=\"\([0-9]\+\)\"\s.\+/\1/" | awk '{sum+=$1;} END{print sum;}'`
+			# {
+			#	echo "Subject: Ongoing run ${DATANAME}"
+			#	echo "To: ${ADMINEMAIL}"
+			#	echo "${INSTRUMENT} run ${DATANAME} is currently in cycle ${CURRENTCYCLE} of ${TOTALCYCLES}"
+			#} | sendmail ${ADMINEMAIL}
+		fi
+############################################################################# MiSeqDx #####################################################################################
+	elif [ `echo ${DATAFOLDER} | grep MiSeqDx | wc -l` -eq 1 ]; then
+		INSTRUMENT=MiSeqDx
+		if [ -e ${i}/RTAComplete.txt ]; then
+			DATANAME=`echo ${i} | awk -v DATAFOLDER="${DATAFOLDER}" '{ gsub ( DATAFOLDER"/", "" ) }1'`
+			dos2unix ${i}/SampleSheet.csv
+				## Have to insert here a sample sheet checker :(
+			CURRENTUSER=`sed -n '/Data/,$p' ${i}/SampleSheet.csv | tail -n +2 | awk -F',' -v c="Sample_Project" 'NR==1{for (i=1; i<=NF; i++) if ($i==c){p=i; break}; next} {print $p}' | sort -u | sed -e "s/\s\+//g"`
+			if [ -z ${CURRENTUSER} ]; then
+				sleep 1
+				# empty user
+				# email
+			elif [ `grep -w ${CURRENTUSER} /var/www/.htpasswd | wc -l` != 1 ]; then
+				sleep 1
+				# user does not exist
+				# email
+			elif [ `grep -w ${CURRENTUSER} /var/www/.htpasswd | wc -l` -eq 1 ]; then
+				if [ -e /data/Resources/Software/ceberSUITE/HAL/modules/${CURRENTUSER}_${INSTRUMENT}.sh ]; then
+					/data/Resources/Software/ceberSUITE/HAL/modules/${CURRENTUSER}_${INSTRUMENT}.sh ${i} ${CURRENTUSER} ${DATANAME} ${INSTRUMENT} ${ADMINEMAIL} ${GROUPEMAIL} ${SERVERNAME}
+				else
+					/data/Resources/Software/ceberSUITE/HAL/modules/default_${INSTRUMENT}.sh ${i} ${CURRENTUSER} ${DATANAME} ${INSTRUMENT} ${ADMINEMAIL} ${GROUPEMAIL} ${SERVERNAME}
+				fi
+				echo ${i} >> ${DATAFOLDER}/.HAL.txt
+				DELETESTRING=`echo ${i} | awk '{ gsub ( "/", "\\\/", $1) }1'`
+				sed -i -e "/${DELETESTRING}/d" .HAL.JOBS.txt
+			fi
+		else
+			sleep 1
+			#CURRENTCYCLE=`ls -d ${i}/Data/Intensities/BaseCalls/L001/C* | sed -e "s/C//" | sed -e "s/\.1//" | sort -g | tail -n1`
+			#TOTALCYCLES=`grep "Read Number" ${i}/RunInfo.xml | sed -e "s/.\+NumCycles=\"\([0-9]\+\)\"\s.\+/\1/" | awk '{sum+=$1;} END{print sum;}'`
+			# {
+			#	echo "Subject: Ongoing run ${ADMINEMAIL}"
+			#	echo "To: jem220@medschl.cam.ac.uk,SMCL_NGS_General@medschl.cam.ac.uk"
+			#	echo "${INSTRUMENT} run ${DATANAME} is currently in cycle ${CURRENTCYCLE} of ${TOTALCYCLES}"
+			#} | sendmail ${ADMINEMAIL}
+		fi
+############################################################################# NextSeq #####################################################################################
+	elif [ `echo ${DATAFOLDER} | grep NextSeq | wc -l` -eq 1 ]; then
+		INSTRUMENT=NextSeq
+		if [ -e ${i}/RTAComplete.txt ]; then
+			DATANAME=`echo ${i} | awk -v DATAFOLDER="${DATAFOLDER}" '{ gsub ( DATAFOLDER"/", "" ) }1'`
+			if [ `ls /data/ngsdata/SampleSheets/${INSTRUMENT}/ | grep ${DATANAME} | wc -l` -gt 1 ]; then
+				{
+					echo "Subject: Run ${DATANAME}"
+					echo "To: jem220@medschl.cam.ac.uk,SMCL_NGS_General@medschl.cam.ac.uk"
+					echo "${INSTRUMENT} run ${DATANAME} has more than one sample sheet, which is not suported automatically for ${INSTRUMENT}"
+				} | sendmail jem220@medschl.cam.ac.uk
+			elif [ `ls /data/ngsdata/SampleSheets/${INSTRUMENT}/ | grep ${DATANAME} | wc -l` -eq 0 ]; then
+				sleep 1
+				# no sample sheet
+				# email
+			elif [ `ls /data/ngsdata/SampleSheets/${INSTRUMENT}/ | grep ${DATANAME} | wc -l` -eq 1 ]; then
+				cp /data/ngsdata/SampleSheets/${INSTRUMENT}/${DATANAME}*.csv ${i}/SampleSheet.csv
+				dos2unix ${i}/SampleSheet.csv
+				## Have to insert here a sample sheet checker :(
+				CURRENTUSER=`sed -n '/Data/,$p' ${i}/SampleSheet.csv | tail -n +2 | awk -F',' -v c="Sample_Project" 'NR==1{for (i=1; i<=NF; i++) if ($i==c){p=i; break}; next} {print $p}' | sort -u | sed -e "s/\s\+//g"`
+				if [ -z ${CURRENTUSER} ]; then
+					sleep 1
+					# empty user
+					# email
+				elif [ `grep -w ${CURRENTUSER} /var/www/.htpasswd | wc -l` != 1 ]; then
+					sleep 1
+					# user does not exist
+					# email
+				elif [ `grep -w ${CURRENTUSER} /var/www/.htpasswd | wc -l` -eq 1 ]; then
+					if [ -e /data/Resources/Software/ceberSUITE/HAL/modules/${CURRENTUSER}_${INSTRUMENT}.sh ]; then
+						/data/Resources/Software/ceberSUITE/HAL/modules/${CURRENTUSER}_${INSTRUMENT}.sh ${i} ${CURRENTUSER} ${DATANAME} ${INSTRUMENT} ${ADMINEMAIL} ${GROUPEMAIL} ${SERVERNAME}
+					else
+						/data/Resources/Software/ceberSUITE/HAL/modules/default_${INSTRUMENT}.sh ${i} ${CURRENTUSER} ${DATANAME} ${INSTRUMENT} ${ADMINEMAIL} ${GROUPEMAIL} ${SERVERNAME}
+					fi
+					echo ${i} >> ${DATAFOLDER}/.HAL.txt
+					DELETESTRING=`echo ${i} | awk '{ gsub ( "/", "\\\/", $1) }1'`
+					sed -i -e "/${DELETESTRING}/d" .HAL.JOBS.txt
+				fi
+			fi
+		else
+			sleep 1
+			#CURRENTCYCLE=`ls -d ${i}/Data/Intensities/BaseCalls/L001/C* | sed -e "s/C//" | sed -e "s/\.1//" | sort -g | tail -n1`
+			#TOTALCYCLES=`grep "Read Number" ${i}/RunInfo.xml | sed -e "s/.\+NumCycles=\"\([0-9]\+\)\"\s.\+/\1/" | awk '{sum+=$1;} END{print sum;}'`
+			# {
+			#	echo "Subject: Ongoing run ${DATANAME}"
+			#	echo "To: ${ADMINEMAIL}"
+			#	echo "${INSTRUMENT} run ${DATANAME} is currently in cycle ${CURRENTCYCLE} of ${TOTALCYCLES}"
+			#} | sendmail ${ADMINEMAIL}
+		fi
+############################################################################# Other Kinds of data #####################################################################################
+	else
+		SIZE1=`du -s ${i} | awk '{ print $1}'`
+		sleep 10
+		SIZE2=`du -s ${i} | awk '{ print $1}'`
+		while [ ${SIZE1} != ${SIZE2} ]; do
+			SIZE1=`du -s ${i} | awk '{ print $1}'`
+			sleep 10
+			SIZE2=`du -s ${i} | awk '{ print $1}'`
+		done
+		## get the job user
+		for k in `awk '{ print $1 }' /var/www/accounts.txt`; do
+			if [ `echo $i | grep $k | wc -l` -eq 1 ]; then
+				CURRENTUSER=${k}
+			fi
+		done
+		## get data name
+		DATANAME=`echo ${i} | awk -v DATAFOLDER="${DATAFOLDER}" -v CURRENTUSER="${CURRENTUSER}" '{ gsub ( DATAFOLDER"/"CURRENTUSER"/", "" ) }1'`
+		## Trigger the right module
+		if [ -e /data/Resources/Software/ceberSUITE/HAL/modules/${CURRENTUSER}.sh ]; then
+			/data/Resources/Software/ceberSUITE/HAL/modules/${CURRENTUSER}.sh ${i} ${CURRENTUSER} ${DATANAME} ${DATAFOLDER}
+		else
+			/data/Resources/Software/ceberSUITE/HAL/modules/default.sh ${i} ${CURRENTUSER} ${DATANAME} ${DATAFOLDER}
+		fi
+		echo ${i} >> ${DATAFOLDER}/.HAL.txt
+		DELETESTRING=`echo ${i} | awk '{ gsub ( "/", "\\\/", $1) }1'`
+		sed -i -e "/${DELETESTRING}/d" ${DATAFOLDER}/.HAL.JOBS.txt
+	fi
+done
+
+
+
+
+
+
+
+
+
+
+
