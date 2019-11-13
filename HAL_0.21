@@ -71,6 +71,14 @@ case $key in
 	JANITOR=$2
 	shift
 	;;
+	--monitor)
+	MONITOR=$2
+	shift
+	;;
+	--bcl2fastq)
+	BCL2FASTQ=$2
+	shift
+	;;
 esac
 shift
 done
@@ -151,7 +159,7 @@ fi
 
 ## Update Password mode
 if [ ${UPDATEPASS} != 'false' ]; then
-	if [ `grep -w ${NEWUSER} /var/www/.htpasswd | wc -l` -eq 1 ]; then
+	if [ `grep -w ${HALUSER} /var/www/.htpasswd | wc -l` -eq 1 ]; then
 		if [ `id -u` != 0 ]; then
 			echo "need to run with sudo"
 			exit
@@ -187,6 +195,8 @@ if [ ${UPDATEPASS} != 'false' ]; then
 		exit
 	fi
 fi
+## Monitor mode
+
 ## Janitor mode
 if [ ${JANITOR} = 'true' ]; then
 	if [ ${FACILITY} = 'CMDL' ]; then
